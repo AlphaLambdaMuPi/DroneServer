@@ -7,7 +7,7 @@ logger = logging.getLogger()
 
 class Role:
     def __init__(self, data, conn):
-        self._name = data['name']
+        self.name = data['name']
         self._conn = conn
 
     @asyncio.coroutine
@@ -32,17 +32,30 @@ class Control(Role):
     def set_drone(self, drone):
         self._drone = drone
 
+    def remove_drone(self):
+        self._drone = None
+
     @asyncio.coroutine
     def _run(self):
         while self._conn.alive():
             data = yield from self._conn.recv()
-            self._drone.get_command(data)
+            if self._drone:
+                self._drone.get_command(data)
+            else:
+                self._conn.send({"Error":"drone was gone(?)"})
+
+    @asyncio.coroutine
+    def close(self):
+        if self._drone:
+            self._drone.remove_control(self)
+        yield from super().close()
 
 class Drone(Role):
     def __init__(self, data, conn):
         super().__init__(data, conn)
         self._ipaddr = data.get('ip', None)
         self._status = False
+        self._controls = []
 
     @asyncio.coroutine
     def _run(self):
@@ -63,4 +76,20 @@ class Drone(Role):
 
     def get_status(self):
         return {'status':self._status, 'ip': self._ipaddr}
+
+    def add_control(self, control):
+        self._controls[control.name] = control
+
+    def remove_control(self, control):
+        try:
+            del self._controls[control.name]
+        except KeyError:
+            logger.warning("{} doesn't control {}".format(control.name,
+                                                          self.name))
+
+    @asyncio.coroutine
+    def close(self):
+        for c in self._controls.values():
+            c.remove_drone()
+        yield from super().close()
 

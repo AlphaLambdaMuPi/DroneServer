@@ -67,9 +67,11 @@ class DroneServer:
         target = data.get('target', None)
         if target in self._drones:
             control.set_drone(self._drones[target])
+            self._drones[target].set_control(control)
             yield from control.run()
         else:
             conn.send({'ERROR': 'target doesn\'t exist!'})
+        yield from self._controls[name].close()
         del self._controls[name]
 
     @asyncio.coroutine
@@ -79,6 +81,7 @@ class DroneServer:
             drone = self._drones[name]
             yield from drone.run()
             logger.debug('Drone {} lost connection.'.format(name))
+            yield from self._drones[name].close()
             del self._drones[name]
         except KeyError:
             logger.debug('Drone {} doesn\'t exist.'.format(name))
