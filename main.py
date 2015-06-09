@@ -11,14 +11,11 @@ from settings import settings as SETTINGS
 logsetting.log_setup()
 logger = logging.getLogger()
 
-def clear_tasks(loop):
-    logger.info('clear tasks...')
-    for task in asyncio.Task.all_tasks():
-        task.cancel()
-    try:
-        loop.run_until_complete(asyncio.gather(*asyncio.Task.all_tasks()))
-    except asyncio.CancelledError:
-        logger.info('some tasks failed.')
+@asyncio.coroutine
+def cleanup(coros):
+    logger.info('clean up...')
+    for coro in coros:
+        yield from coro
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
@@ -31,10 +28,12 @@ if __name__ == "__main__":
         loop.run_forever()
     except KeyboardInterrupt:
         print()
-        loop.run_until_complete(server.stop())
-        clear_tasks(loop)
+        coros = [
+            server.stop(),
+        ]
+        loop.run_until_complete(cleanup(coros))
+
     finally:
-        loop.stop()
         loop.close()
-        print("exit.")
+        logger.info("exit.")
 

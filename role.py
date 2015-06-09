@@ -41,14 +41,18 @@ class Control(Role):
 class Drone(Role):
     def __init__(self, data, conn):
         super().__init__(data, conn)
+        self._ipaddr = data.get('ip', None)
+        self._status = False
 
     @asyncio.coroutine
     def _run(self):
         nonecnt = 0
-        while self._conn.alive() and nonecnt >= 5:
+        while self._conn.alive() and nonecnt <= 5:
             data = yield from self._conn.recv()
             if data is None:
                 nonecnt += 1
+            elif data.get('status', None):
+                self._status = data['status']
             logger.debug('receive from {}: {}'.format(self._name, data))
 
     def get_command(self, command):
@@ -56,3 +60,7 @@ class Drone(Role):
             self._conn.send(command)
         except ConnectionError:
             logger.debug('Drone {} lost connection.'.format(self._name))
+
+    def get_status(self):
+        return {'status':self._status, 'ip': self._ipaddr}
+

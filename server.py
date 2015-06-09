@@ -22,9 +22,9 @@ ROLES = set([
 
 class DroneServer:
     def __init__(self, loop=None):
+        if not loop:
+            loop = asyncio.get_event_loop()
         self._loop = loop
-        if not self._loop:
-            self._loop = asyncio.get_event_loop()
         self._datas = defaultdict(int)
         self._conns = {DRONE: {}, CONTROL: {}}
         self._controls = self._conns[CONTROL]
@@ -58,7 +58,7 @@ class DroneServer:
 
     @asyncio.coroutine
     def run_control(self, name, conn):
-        targets = list(self._drones.keys())
+        targets = {k: v.get_status() for k, v in self._drones.items()}
         conn.send(targets)
         control = self._controls[name]
         data = yield from conn.recv()
@@ -74,18 +74,21 @@ class DroneServer:
 
     @asyncio.coroutine
     def run_drone(self, name, conn):
-        logger.debug('Drone {} connected.'.format(name))
-        drone = self._drones[name]
-        yield from drone.run()
-        logger.debug('Drone {} lost connection.'.format(name))
-        del self._drones[name]
+        try:
+            logger.debug('Drone {} connected.'.format(name))
+            drone = self._drones[name]
+            yield from drone.run()
+            logger.debug('Drone {} lost connection.'.format(name))
+            del self._drones[name]
+        except KeyError:
+            logger.debug('Drone {} doesn\'t exist.'.format(name))
 
     @asyncio.coroutine
     def stop(self):
-        for conn in self._controls.values():
-            yield from conn.close()
-        for conn in self._drones.values():
-            yield from conn.close()
+        for control in self._controls.values():
+            yield from control.close()
+        for drone in self._drones.values():
+            yield from drone.close()
 
 # global object       
 server = DroneServer()

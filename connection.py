@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
 import asyncio
 from asyncio.queues import Queue, QueueEmpty
@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger()
 
-class StreamConnection:
+class StreamConnection(object):
     def __init__(self, sr, sw, *, loop=None):
         if not loop:
             loop = asyncio.get_event_loop()
@@ -22,29 +22,29 @@ class StreamConnection:
         while self.alive():
             try:
                 data = yield from self._sr.readline()
-                if not data:
-                    logger.debug("connection lost")
-                    break
-                data = self._convert(data)
-                if data and len(data):
-                    self._msgs.put_nowait(data)
+                data.strip()
+                if data:
+                    self._msgs.put_nowait(self._convert(data))
             except asyncio.CancelledError:
                 logger.debug("readline from stream reader was cancelled.")
             except ConnectionError:
                 logger.debug("connection error")
                 break
+            except KeyboardInterrupt:
+                logger.debug("capture ctrl-C in connection, ignored.")
+
         logger.debug("connection closed")
 
     def _convert(self, data):
-        return data.strip()
+        return data
 
     @asyncio.coroutine
     def recv(self):
         try:
             return self._msgs.get_nowait()
-
         except QueueEmpty:
             pass
+
         # Wait for a message until the connection is closed
         next_message = self._loop.create_task(self._msgs.get())
         done, pending = yield from asyncio.wait(
@@ -63,8 +63,8 @@ class StreamConnection:
             self._sw.write(data)
         except OSError:
             raise ConnectionError("can't send data.")
-        except Exception:
-            logger.debug("Q___Q")
+        except Exception as e:
+            logger.critical("unexpected exception: {}".format(e))
 
     def alive(self):
         return not self._sr.at_eof()
@@ -95,11 +95,32 @@ class JsonConnection(StreamConnection):
         try:
             data = json.loads(data.decode())
         except UnicodeError:
-            logger.debug("can't convert byte to string")
+            logger.warning("can't convert byte to string")
         except ValueError:
-            logger.debug("get wrong json format")
+            logger.warning("get wrong json format")
         else:
-            # logger.debug("get: {}".format(data))
+            return data
+
+    def send(self, data):
+        try:
+            logger.debug("send: {}".format(data))
+            data = json.dumps(data).encode()
+            super().send(data)
+        except ValueError:
+            raise ValueError("wrong json format")
+
+class ConsoleConnection(StreamConnection):
+    def __init__(self, sr, sw, *, loop=None):
+        super().__init__(sr, sw, loop=loop)
+
+    def _convert(self, data):
+        data = super()._convert(data)
+        try:
+            data = data.decode().split()
+            data = {'action': data[0], 'args': data[1:]}
+        except UnicodeError:
+            logger.warning("can't convert byte to string")
+        else:
             return data
 
     def send(self, data):
