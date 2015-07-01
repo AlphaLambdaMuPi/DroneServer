@@ -116,8 +116,7 @@ class ConsoleConnection(StreamConnection):
     def _convert(self, data):
         data = super()._convert(data)
         try:
-            data = data.decode().split()
-            data = {'action': data[0], 'args': data[1:]}
+            data = data.decode()
         except UnicodeError:
             logger.warning("can't convert byte to string")
         else:

@@ -52,27 +52,30 @@ class DroneServer:
 
     def get_role(self, role, data, conn):
         if role == DRONE:
-            return Drone(data, conn)
+            return Drone(data, conn, self)
         if role == CONTROL:
-            return Control(data, conn)
+            return Control(data, conn, self)
 
     @asyncio.coroutine
     def run_control(self, name, conn):
-        targets = {k: v.get_status() for k, v in self._drones.items()}
-        conn.send(targets)
-        control = self._controls[name]
-        data = yield from conn.recv()
-        if not isinstance(data, dict):
-            return
-        target = data.get('target', None)
-        if target in self._drones:
-            control.set_drone(self._drones[target])
-            self._drones[target].set_control(control)
-            yield from control.run()
-        else:
-            conn.send({'ERROR': 'target doesn\'t exist!'})
-        yield from self._controls[name].close()
-        del self._controls[name]
+        try:
+            logger.debug("Control {} connected.".format(name))
+            targets = {k: v.get_status() for k, v in self._drones.items()}
+            conn.send(targets)
+            control = self._controls[name]
+            data = yield from conn.recv()
+            if not isinstance(data, dict):
+                return
+            target = data.get('target', None)
+            if target in self._drones:
+                control.set_drone(target)
+                yield from control.run()
+            else:
+                conn.send({'ERROR': 'target doesn\'t exist!'})
+            yield from self._controls[name].close()
+            del self._controls[name]
+        except KeyError:
+            logger.debug('Control {} doesn\'t exist.'.format(name))
 
     @asyncio.coroutine
     def run_drone(self, name, conn):
@@ -85,6 +88,11 @@ class DroneServer:
             del self._drones[name]
         except KeyError:
             logger.debug('Drone {} doesn\'t exist.'.format(name))
+
+    def send_command_to_drone(self, drone_name, cmd):
+        if drone_name not in self._drones:
+            return False
+        return self._drones[drone_name].get_command(cmd)
 
     @asyncio.coroutine
     def stop(self):
